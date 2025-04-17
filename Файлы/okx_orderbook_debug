@@ -1,0 +1,107 @@
+import asyncio
+import json
+import logging
+import websockets
+from datetime import datetime
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[logging.StreamHandler()]
+)
+logger = logging.getLogger(__name__)
+
+async def handle_candles(inst_id: str, timeframe: str):
+    """Обработчик свечных данных"""
+    ws_url = "wss://ws.okx.com:8443/ws/v5/business"
+    try:
+        async with websockets.connect(ws_url, ping_interval=20, ping_timeout=30) as ws:
+            sub_msg = {
+                "op": "subscribe",
+                "args": [{
+                    "channel": f"candle{timeframe}",
+                    "instId": inst_id,
+                    "instType": "SWAP"
+                }]
+            }
+            await ws.send(json.dumps(sub_msg))
+            logger.info(f"Подписка на свечи {timeframe} отправлена")
+            
+            async for message in ws:
+                data = json.loads(message)
+                
+                if 'event' in data and data['event'] == 'error':
+                    logger.error(f"Candle {timeframe} error: {data.get('msg')}")
+                    continue
+                
+                if 'data' in data:
+                    for candle in data['data']:
+                        ts = int(candle[0]) // 1000
+                        dt = datetime.fromtimestamp(ts).strftime('%Y-%m-%d %H:%M:%S')
+                        logger.info(
+                            f"Candle {timeframe} | {dt} | "
+                            f"O: {float(candle[1]):.2f} H: {float(candle[2]):.2f} "
+                            f"L: {float(candle[3]):.2f} C: {float(candle[4]):.2f} "
+                            f"V: {float(candle[5]):.2f}"
+                        )
+
+    except Exception as e:
+        logger.error(f"Candle {timeframe} error: {e}")
+
+async def handle_orderbook(inst_id: str):
+    """Обработчик стакана заявок"""
+    ws_url = "wss://ws.okx.com:8443/ws/v5/public"
+    try:
+        async with websockets.connect(ws_url, ping_interval=20, ping_timeout=30) as ws:
+            # Исправленная подписка с указанием глубины стакана
+            sub_msg = {
+                "op": "subscribe",
+                "args": [{
+                    "channel": "books",
+                    "instId": inst_id,
+                    "instType": "SWAP",
+                    "sz": 400  # Явное указание глубины стакана
+                }]
+            }
+            await ws.send(json.dumps(sub_msg))
+            logger.info("Подписка на стакан отправлена")
+            
+            async for message in ws:
+                data = json.loads(message)
+                
+                if 'event' in data:
+                    if data['event'] == 'error':
+                        logger.error(f"OrderBook error: {data.get('msg')}")
+                    elif data['event'] == 'subscribe':
+                        logger.info("Успешная подписка на стакан")
+                    continue
+                
+                if 'data' in data:
+                    snapshot = data['data'][0]
+                    logger.info(
+                        f"OrderBook | {len(snapshot['asks'])} asks | "
+                        f"{len(snapshot['bids'])} bids | TS: {snapshot['ts']}"
+                    )
+
+    except Exception as e:
+        logger.error(f"OrderBook error: {e}")
+
+async def main():
+    inst_id = "ETH-USDT-SWAP"
+    
+    tasks = [
+        handle_candles(inst_id, "1m"),
+        handle_candles(inst_id, "5m"),
+        handle_orderbook(inst_id)
+    ]
+    
+    try:
+        await asyncio.gather(*tasks)
+    except asyncio.CancelledError:
+        logger.info("Все задачи остановлены")
+
+if __name__ == "__main__":
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        logger.info("Приложение остановлено пользователем")

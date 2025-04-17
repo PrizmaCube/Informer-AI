@@ -1,0 +1,38 @@
+# Байткод Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Дистрибутивы
+dist/
+build/
+*.egg-info/
+
+# Виртуальное окружение
+venv/
+env/
+ENV/
+
+# Логи
+*.log
+
+# Локальные настройки
+.env
+config.yaml
+secrets.yaml
+
+# Кэш и временные файлы
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+.hypothesis/
+.vscode/
+.idea/
+*.so
+.Python
+
+# Файлы ОС
+.DS_Store
+Thumbs.db 

@@ -1,0 +1,15 @@
+ccxt
+numpy
+pandas
+pyyaml
+websockets
+aiohttp
+asyncio
+python-telegram-bot
+fastapi
+uvicorn
+scikit-learn
+torch
+sqlalchemy
+matplotlib
+dash
