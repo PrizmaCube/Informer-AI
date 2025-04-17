@@ -56,13 +56,16 @@ def increment_version(version):
     # Increment minor version
     return f"v{major}.{minor+1}"
 
-def save_version(message=None, push=False, auto_increment=True):
+def save_version(message=None, push=False, auto_increment=True, force=False):
     """Save a new version with auto-incrementing version number"""
     # Check for changes
     changes = run_command("git status --porcelain")
-    if not changes:
+    if not changes and not force:
         print("No changes to save.")
-        return False
+        user_choice = input("Хотите создать новую версию без изменений? (д/н): ")
+        if user_choice.lower() not in ["д", "y", "yes", "да"]:
+            return False
+        force = True
     
     # Get current and new version
     current_version = get_latest_version()
@@ -84,7 +87,16 @@ def save_version(message=None, push=False, auto_increment=True):
     run_command("git add .")
     
     # Create commit
-    run_command(f'git commit -m "Version {new_version}: {message}"')
+    commit_message = f'Version {new_version}: {message}'
+    if force and not changes:
+        commit_message += ' [empty update]'
+    
+    # Use --allow-empty if forcing an empty commit
+    commit_cmd = 'git commit -m "{}"'.format(commit_message)
+    if force and not changes:
+        commit_cmd = 'git commit --allow-empty -m "{}"'.format(commit_message)
+    
+    run_command(commit_cmd)
     
     # Create tag
     run_command(f'git tag -a {new_version} -m "{message}"')
@@ -248,6 +260,7 @@ def main():
     save_parser.add_argument("-m", "--message", help="Version description")
     save_parser.add_argument("-p", "--push", action="store_true", help="Push to GitHub")
     save_parser.add_argument("--manual", action="store_true", help="Manually enter version number")
+    save_parser.add_argument("-f", "--force", action="store_true", help="Force creating a new version even without changes")
     
     # list command
     subparsers.add_parser("list", help="List all versions")
@@ -271,7 +284,8 @@ def main():
         save_version(
             message=args.message if hasattr(args, 'message') else None,
             push=args.push if hasattr(args, 'push') else False,
-            auto_increment=not (hasattr(args, 'manual') and args.manual)
+            auto_increment=not (hasattr(args, 'manual') and args.manual),
+            force=args.force if hasattr(args, 'force') else False
         )
     
     elif args.command == "list":
