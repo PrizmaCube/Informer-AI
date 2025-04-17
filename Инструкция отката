@@ -1,0 +1,75 @@
+# Инструкция по восстановлению проекта
+
+## Быстрое восстановление
+
+Быстрый откат к последней версии:
+```
+python git_restore.py --latest
+```
+
+Принудительный откат без запроса подтверждения:  
+```
+python git_restore.py --latest -f
+```
+
+Откат к определенной версии:
+```
+python git_restore.py v0.1
+```
+
+## Восстановление без настроенного Git
+
+Восстановление последней версии (укажите свой репозиторий):
+```
+python git_restore.py --username PrizmaCube --repo Informer-AI --latest
+```
+
+Восстановление конкретной версии с указанием репозитория:
+```
+python git_restore.py v0.2 --username PrizmaCube --repo Informer-AI
+```
+
+## Просмотр версий
+
+Просмотр доступных версий в текущем репозитории:
+```
+python git_restore.py -l
+```
+
+Просмотр версий в указанном репозитории:
+```
+python git_restore.py -l --username PrizmaCube --repo Informer-AI
+```
+
+Интерактивный выбор версии:
+```
+python git_restore.py
+```
+
+## Решение проблем
+
+Решение проблем доступа к файлам (сохранение папки .git):
+```
+python git_restore.py --latest --keep-git
+```
+
+Запуск с правами администратора (Windows):
+```
+python git_restore.py --latest --admin
+```
+
+Восстановление без сохранения скриптов управления версиями:
+```
+python git_restore.py --latest --no-restore-scripts
+```
+
+## Комбинирование опций
+
+Самый надежный способ восстановления без Git:
+```
+python git_restore.py --username PrizmaCube --repo Informer-AI --latest -f
+```
+
+Решение проблем доступа с правами администратора:
+```
+python git_restore.py --username PrizmaCube --repo Informer-AI --latest --keep-git --admin 
