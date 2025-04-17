@@ -1,0 +1,27 @@
+Быстрый откат
+
+   python git_restore.py --latest
+
+Принудительный быстрый откат  
+
+    python git_restore.py --latest -f
+
+Быстрый откат в экстренной ситуации
+
+    python git_restore.py --latest -f
+    
+Откат к определенной версии
+
+    python git_restore.py v0.1
+    
+Откат к определенной версии без подтверждения
+
+    python git_restore.py v0.2 -f
+    
+Просмотр списка доступных версий перед откатом
+
+    python git_restore.py -l
+    
+Интерактивный выбор версии для отката
+
+    python git_restore.py

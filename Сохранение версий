@@ -1,0 +1,31 @@
+Полное архивирование всех версий
+ 
+      python git_backup.py archive --output "C:/Backup/AllVersions"
+
+Архивирование только определенных версий
+
+      python git_backup.py archive --output "C:/Backup" --versions v0.1 v0.3
+
+Автоматическое архивирование при сохранении версии
+
+      python git_backup.py save -m "Описание версии" -p --archive "C:/Backup/Versions"
+      
+Обычное сохранение новой версии с отправкой на GitHub
+
+      python git_backup.py save -m "Описание версии" -p
+      
+Сохранение без описания (будет предложено ввести описание)
+
+      python git_backup.py save -p
+      
+Сохранение с принудительным созданием версии (даже если нет изменений)
+
+      python git_backup.py save -m "Пустая версия" -p -f
+      
+Сохранение с ручным выбором номера версии
+
+      python git_backup.py save -m "Своя версия" -p --manual
+      
+Показать список всех доступных версий
+
+      python git_backup.py list

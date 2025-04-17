@@ -1,0 +1,31 @@
+Скачивание версии в отдельную папку
+
+    python git_download.py v0.1 --download
+
+Скачивание в указанную директорию
+
+    python git_download.py v0.2 --download --dest "C:/Downloads/MyProject"
+
+Интерактивный выбор версии для скачивания
+
+    python git_download.py --download
+
+Скачивание из другого репозитория
+
+    python git_download.py --repo --download
+
+Мягкое переключение между версиями в Git
+
+    python git_download.py v0.1
+
+Интерактивный выбор версии для переключения
+
+    python git_download.py
+
+Возврат к последней версии (master/main ветка)
+
+    python git_download.py --latest
+
+Скачивание последней версии в отдельную папку
+
+    python git_download.py --latest --download 

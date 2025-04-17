@@ -5,6 +5,8 @@ import subprocess
 import datetime
 import argparse
 import re
+import shutil
+import json
 
 def run_command(command, show_output=False):
     """Execute command and return output"""
@@ -71,7 +73,7 @@ def find_next_available_version(version):
         new_version = increment_version(new_version)
     return new_version
 
-def save_version(message=None, push=False, auto_increment=True, force=False):
+def save_version(message=None, push=False, auto_increment=True, force=False, archive_folder=None):
     """Save a new version with auto-incrementing version number"""
     # Check for changes
     changes = run_command("git status --porcelain")
@@ -117,6 +119,66 @@ def save_version(message=None, push=False, auto_increment=True, force=False):
         if not message:
             timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             message = f"Update {timestamp}"
+    
+    # If archive_folder provided, create a copy of the project in a versioned subfolder
+    if archive_folder:
+        # Create archive directory if not exists
+        archive_path = os.path.expanduser(archive_folder)
+        if not os.path.exists(archive_path):
+            os.makedirs(archive_path)
+        
+        # Create version-specific folder
+        version_path = os.path.join(archive_path, new_version)
+        if os.path.exists(version_path):
+            shutil.rmtree(version_path)
+        os.makedirs(version_path)
+        
+        # Copy all files to archive except .git folder and specified files
+        exclude_patterns = ['.git', 'temp_*', '*.zip', '*.bak', '*.tmp', '*.log']
+        excluded_files = set()
+        
+        print(f"Сохранение версии {new_version} в архив: {version_path}")
+        
+        # Function to check if path should be excluded
+        def is_excluded(path):
+            # Check direct match
+            if path in exclude_patterns:
+                return True
+            
+            # Check pattern match
+            for pattern in exclude_patterns:
+                if '*' in pattern:
+                    if re.match(pattern.replace('*', '.*'), path):
+                        return True
+            return False
+        
+        # Copy files
+        for item in os.listdir(os.getcwd()):
+            if is_excluded(item):
+                excluded_files.add(item)
+                continue
+                
+            src_path = os.path.join(os.getcwd(), item)
+            dst_path = os.path.join(version_path, item)
+            
+            if os.path.isdir(src_path):
+                shutil.copytree(src_path, dst_path, ignore=shutil.ignore_patterns(*exclude_patterns))
+            else:
+                shutil.copy2(src_path, dst_path)
+        
+        # Create version info file
+        version_info = {
+            "version": new_version,
+            "date": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "description": message,
+            "excluded_files": list(excluded_files)
+        }
+        
+        with open(os.path.join(version_path, "version_info.json"), "w") as f:
+            json.dump(version_info, f, indent=4)
+            
+        print(f"Версия {new_version} сохранена в архив {version_path}")
+        print(f"Исключены файлы/папки: {', '.join(excluded_files)}")
     
     # Add all changes
     run_command("git add .")
@@ -289,6 +351,96 @@ Thumbs.db
     # Setup GitHub remote
     setup_github_remote()
 
+def archive_versions(output_folder, versions=None):
+    """Create archive of specific versions or all versions"""
+    if not output_folder:
+        output_folder = os.path.join(os.getcwd(), "version_archives")
+    
+    # Create archive directory if not exists
+    output_folder = os.path.expanduser(output_folder)
+    if not os.path.exists(output_folder):
+        os.makedirs(output_folder)
+    
+    # Get all versions if not specified
+    if not versions:
+        tags = run_command("git tag -l 'v*' --sort=-v:refname").split('\n')
+        if not tags or not tags[0]:
+            print("No versions to archive.")
+            return False
+        versions = tags
+    
+    # Make sure versions is a list
+    if isinstance(versions, str):
+        versions = [versions]
+    
+    print(f"Создание архива версий в {output_folder}")
+    for version in versions:
+        # Check if version exists
+        if not tag_exists(version):
+            print(f"Версия {version} не найдена.")
+            continue
+        
+        # Create version-specific directory
+        version_path = os.path.join(output_folder, version)
+        if os.path.exists(version_path):
+            shutil.rmtree(version_path)
+        os.makedirs(version_path)
+        
+        # Get version info
+        info = run_command(f'git show {version} --pretty=format:"%ci | %s" -s')
+        date, message = info.split(" | ", 1) if " | " in info else (info, "Нет описания")
+        
+        print(f"Архивирование версии {version} ({date}) - {message}")
+        
+        # Create temp branch for this version
+        temp_branch = f"temp_archive_{version}"
+        try:
+            # Try to delete the temp branch if it exists
+            run_command(f"git branch -D {temp_branch}", show_output=False)
+        except:
+            pass
+        
+        # Checkout version to temp branch
+        run_command(f"git checkout -b {temp_branch} {version}")
+        
+        # Get all files in this version
+        files = run_command("git ls-files").split('\n')
+        
+        # Copy files to archive directory
+        for file in files:
+            if not file:
+                continue
+                
+            # Create directory structure
+            file_dir = os.path.dirname(file)
+            if file_dir:
+                os.makedirs(os.path.join(version_path, file_dir), exist_ok=True)
+            
+            # Copy file
+            shutil.copy2(file, os.path.join(version_path, file))
+        
+        # Create version info file
+        version_info = {
+            "version": version,
+            "date": date,
+            "description": message,
+            "files_count": len(files)
+        }
+        
+        with open(os.path.join(version_path, "version_info.json"), "w") as f:
+            json.dump(version_info, f, indent=4)
+        
+        # Return to original branch
+        run_command("git checkout master")
+        
+        # Remove temp branch
+        run_command(f"git branch -D {temp_branch}")
+        
+        print(f"Версия {version} архивирована в {version_path}")
+    
+    print(f"Архивирование завершено. Все версии сохранены в {output_folder}")
+    return True
+
 def main():
     parser = argparse.ArgumentParser(description="Easy version control with GitHub integration")
     subparsers = parser.add_subparsers(dest="command", help="Command")
@@ -299,6 +451,7 @@ def main():
     save_parser.add_argument("-p", "--push", action="store_true", help="Push to GitHub")
     save_parser.add_argument("--manual", action="store_true", help="Manually enter version number")
     save_parser.add_argument("-f", "--force", action="store_true", help="Force creating a new version even without changes")
+    save_parser.add_argument("--archive", help="Save a copy of this version to specified directory")
     
     # list command
     subparsers.add_parser("list", help="List all versions")
@@ -316,6 +469,11 @@ def main():
     # github command
     subparsers.add_parser("github", help="Configure GitHub remote repository")
     
+    # archive command
+    archive_parser = subparsers.add_parser("archive", help="Archive specific versions to local folder")
+    archive_parser.add_argument("--output", help="Output directory for archives")
+    archive_parser.add_argument("--versions", nargs="+", help="Specific versions to archive (default: all)")
+    
     args = parser.parse_args()
     
     if not args.command or args.command == "save":
@@ -323,7 +481,8 @@ def main():
             message=args.message if hasattr(args, 'message') else None,
             push=args.push if hasattr(args, 'push') else False,
             auto_increment=not (hasattr(args, 'manual') and args.manual),
-            force=args.force if hasattr(args, 'force') else False
+            force=args.force if hasattr(args, 'force') else False,
+            archive_folder=args.archive if hasattr(args, 'archive') else None
         )
     
     elif args.command == "list":
@@ -340,6 +499,12 @@ def main():
     
     elif args.command == "github":
         setup_github_remote()
+        
+    elif args.command == "archive":
+        archive_versions(
+            args.output if hasattr(args, 'output') and args.output else None,
+            args.versions if hasattr(args, 'versions') and args.versions else None
+        )
 
 if __name__ == "__main__":
     main() 

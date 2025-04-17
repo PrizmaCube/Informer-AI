@@ -83,8 +83,24 @@ def get_versions():
         print(f"Ошибка при получении версий: {e}")
         return []
 
-def restore_version(version_info=None, force=False):
+def get_latest_version():
+    """Получить последнюю версию из GitHub"""
+    versions = get_versions()
+    if not versions:
+        return None
+    return versions[0]  # Первая версия в списке - самая последняя
+
+def restore_version(version_info=None, force=False, latest=False):
     """Восстановить проект к выбранной версии"""
+    # Если запрошена последняя версия, находим её
+    if latest:
+        latest_version = get_latest_version()
+        if not latest_version:
+            print("Нет доступных версий на GitHub")
+            return False
+        version_info = latest_version
+        print(f"Выбрана последняя версия: {latest_version[0]}")
+    
     # Если версия не указана, показываем список доступных версий
     if not version_info:
         versions = get_versions()
@@ -255,6 +271,8 @@ def main():
     parser.add_argument("version", nargs="?", help="Версия для восстановления (опционально)")
     parser.add_argument("-f", "--force", action="store_true", help="Принудительное восстановление без запроса подтверждения")
     parser.add_argument("-l", "--list", action="store_true", help="Только вывести список доступных версий")
+    parser.add_argument("--latest", action="store_true", help="Быстрый откат к последней доступной версии")
+    parser.add_argument("--temp", action="store_true", help="Временное восстановление последней версии (то же что и --latest)")
     
     args = parser.parse_args()
     
@@ -266,6 +284,11 @@ def main():
             print("=================")
             for i, (version, _, _, date, message) in enumerate(versions):
                 print(f"{i+1}. {version} ({date}) - {message}")
+        return
+    
+    # Обработка флагов быстрого отката к последней версии
+    if args.latest or args.temp:
+        restore_version(force=args.force, latest=True)
         return
         
     if args.version:
