@@ -45,6 +45,14 @@ def get_latest_version():
     except Exception:
         return "v0.0"
 
+def tag_exists(tag):
+    """Check if a tag exists"""
+    try:
+        tags = run_command("git tag -l").split('\n')
+        return tag in tags
+    except Exception:
+        return False
+
 def increment_version(version):
     """Increment the version number"""
     # Extract version components
@@ -55,6 +63,13 @@ def increment_version(version):
     major, minor = map(int, match.groups())
     # Increment minor version
     return f"v{major}.{minor+1}"
+
+def find_next_available_version(version):
+    """Find the next available version that doesn't already exist as a tag"""
+    new_version = version
+    while tag_exists(new_version):
+        new_version = increment_version(new_version)
+    return new_version
 
 def save_version(message=None, push=False, auto_increment=True, force=False):
     """Save a new version with auto-incrementing version number"""
@@ -71,10 +86,30 @@ def save_version(message=None, push=False, auto_increment=True, force=False):
     current_version = get_latest_version()
     if auto_increment:
         new_version = increment_version(current_version)
+        # Make sure the new version doesn't already exist
+        new_version = find_next_available_version(new_version)
     else:
         new_version = input(f"Enter new version (current: {current_version}): ")
         if not new_version:
             new_version = increment_version(current_version)
+            new_version = find_next_available_version(new_version)
+        elif tag_exists(new_version):
+            print(f"Версия {new_version} уже существует.")
+            overwrite = input("Перезаписать существующую версию? (д/н): ")
+            if overwrite.lower() in ["д", "y", "yes", "да"]:
+                # Delete existing tag
+                run_command(f"git tag -d {new_version}")
+                if push:
+                    # If we're going to push, also delete the remote tag
+                    try:
+                        run_command(f"git push origin :refs/tags/{new_version}")
+                        print(f"Удалена удаленная версия {new_version}")
+                    except Exception:
+                        print(f"Не удалось удалить удаленную версию {new_version}. Продолжаем...")
+                print(f"Существующая версия {new_version} удалена.")
+            else:
+                new_version = find_next_available_version(new_version)
+                print(f"Будет создана новая версия {new_version} вместо.")
     
     # Get description if not provided
     if not message:
@@ -99,9 +134,12 @@ def save_version(message=None, push=False, auto_increment=True, force=False):
     run_command(commit_cmd)
     
     # Create tag
-    run_command(f'git tag -a {new_version} -m "{message}"')
-    
-    print(f"Version {new_version} saved: {message}")
+    try:
+        run_command(f'git tag -a {new_version} -m "{message}"')
+        print(f"Version {new_version} saved: {message}")
+    except Exception as e:
+        print(f"Error creating tag: {e}")
+        return False
     
     # Push to GitHub if requested
     if push:
