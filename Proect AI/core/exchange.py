@@ -211,6 +211,35 @@ class OKXExchange:
         symbol = symbol or self.symbol
         try:
             orderbook = await self.exchange.fetch_order_book(symbol, limit)
+            
+            # Выводим детальную информацию о полученном стакане
+            asks_count = len(orderbook.get('asks', []))
+            bids_count = len(orderbook.get('bids', []))
+            timestamp = orderbook.get('timestamp')
+            
+            # Преобразуем timestamp в читаемый формат, если он есть
+            time_str = "N/A"
+            if timestamp:
+                time_str = time.strftime('%H:%M:%S', time.localtime(timestamp / 1000))
+                
+            self.logger.info(f"REST API: Получен стакан {symbol} на {time_str} | {asks_count} заявок на продажу, {bids_count} заявок на покупку")
+            
+            # Показываем лучшие 3 цены спроса и предложения
+            if asks_count > 0 and bids_count > 0:
+                asks = orderbook.get('asks', [])[:3]
+                bids = orderbook.get('bids', [])[:3]
+                asks_str = " | ".join([f"{a[0]}:{a[1]}" for a in asks])
+                bids_str = " | ".join([f"{b[0]}:{b[1]}" for b in bids])
+                self.logger.info(f"REST API: Лучшие ASK: {asks_str}")
+                self.logger.info(f"REST API: Лучшие BID: {bids_str}")
+                
+                # Расчет спреда
+                best_ask = float(asks[0][0])
+                best_bid = float(bids[0][0])
+                spread = best_ask - best_bid
+                spread_percent = (spread / best_bid) * 100
+                self.logger.info(f"REST API: Спред: {spread:.2f} USD ({spread_percent:.4f}%)")
+                
             return orderbook
         except Exception as e:
             self.logger.error(f"Ошибка получения стакана ордеров для {symbol}: {e}")
@@ -225,6 +254,23 @@ class OKXExchange:
         """
         try:
             balance = await self.exchange.fetch_balance()
+            
+            # Выводим информацию о балансе
+            total = balance.get('total', {})
+            free = balance.get('free', {})
+            used = balance.get('used', {})
+            
+            # Находим и выводим основные валюты
+            main_currencies = ['USDT', 'BTC', 'ETH']
+            for currency in main_currencies:
+                if currency in total:
+                    total_amount = total.get(currency, 0)
+                    free_amount = free.get(currency, 0)
+                    used_amount = used.get(currency, 0)
+                    
+                    if total_amount > 0:
+                        self.logger.info(f"REST API: Баланс {currency}: {total_amount} (доступно: {free_amount}, используется: {used_amount})")
+            
             return balance
         except Exception as e:
             self.logger.error(f"Ошибка получения баланса: {e}")
@@ -242,6 +288,46 @@ class OKXExchange:
         """
         try:
             positions = await self.exchange.fetch_positions(symbol)
+            
+            # Выводим информацию о позициях
+            positions_count = len(positions)
+            self.logger.info(f"REST API: Получено {positions_count} позиций")
+            
+            # Показываем детали по каждой позиции
+            for position in positions:
+                symbol = position.get('symbol', 'UNKNOWN')
+                side = position.get('side', 'UNKNOWN')
+                contracts = position.get('contracts', 0)
+                contract_size = position.get('contractSize', 1)
+                notional = position.get('notional', 0)
+                leverage = position.get('leverage', 1)
+                
+                # Определяем цвет для стороны
+                side_color = Colors.GREEN if side == 'long' else Colors.RED
+                side_text = f"{side_color}{side.upper()}{Colors.RESET}"
+                
+                # Проверяем, есть ли реальная позиция
+                if notional and float(notional) != 0:
+                    entry_price = position.get('entryPrice', 0)
+                    unrealized_pnl = position.get('unrealizedPnl', 0)
+                    
+                    # Определяем цвет для PnL
+                    if unrealized_pnl:
+                        try:
+                            pnl_float = float(unrealized_pnl)
+                            if pnl_float > 0:
+                                pnl_colored = f"{Colors.GREEN}+{unrealized_pnl}{Colors.RESET}"
+                            elif pnl_float < 0:
+                                pnl_colored = f"{Colors.RED}{unrealized_pnl}{Colors.RESET}"
+                            else:
+                                pnl_colored = str(unrealized_pnl)
+                        except:
+                            pnl_colored = str(unrealized_pnl)
+                    else:
+                        pnl_colored = "N/A"
+                    
+                    self.logger.info(f"REST API: Позиция {symbol}: {side_text} | Размер: {contracts} контрактов | Цена входа: {entry_price} | PnL: {pnl_colored} | Плечо: {leverage}x")
+            
             return positions
         except Exception as e:
             self.logger.error(f"Ошибка получения позиций: {e}")
@@ -287,34 +373,74 @@ class OKXExchange:
 # Функция для тестирования модуля
 async def test_exchange():
     """Тестирование функциональности обмена"""
+    print("=" * 50)
+    print("ТЕСТИРОВАНИЕ REST API СОЕДИНЕНИЯ")
+    print("Вы увидите все данные, получаемые через REST API")
+    print("=" * 50)
+    
     # Создаем экземпляр биржи
     exchange = OKXExchange(config_path='../config.yaml')
     
     # Выводим информацию о текущем режиме
     print(f"Текущий режим: {exchange.mode}")
+    print("-" * 50)
     
-    # Получаем текущую информацию о тикере
-    ticker = await exchange.fetch_ticker()
-    print(f"Тикер: {ticker['last']}")
+    # Запрашиваем информацию о тикере
+    symbol = exchange.symbol  # Берем символ из конфигурации
+    print(f"Получение информации для символа: {symbol}")
+    print("-" * 50)
     
-    # Получаем стакан ордеров (первые 5 уровней)
-    orderbook = await exchange.fetch_orderbook(limit=5)
-    print(f"Топ 5 ордеров на покупку: {orderbook['bids']}")
-    print(f"Топ 5 ордеров на продажу: {orderbook['asks']}")
+    print("1. Получаем информацию о тикере...")
+    try:
+        ticker = await exchange.fetch_ticker(symbol)
+        print(f"Тикер для {symbol}:")
+        print(f"  Последняя цена: {ticker['last']}")
+        print(f"  Лучшая цена покупки: {ticker['bid']}")
+        print(f"  Лучшая цена продажи: {ticker['ask']}")
+        print(f"  24ч объем: {ticker['volume']} / {ticker['quoteVolume']} USDT")
+        print(f"  24ч изменение: {ticker['percentage']}%")
+        print(f"  24ч максимум: {ticker['high']}")
+        print(f"  24ч минимум: {ticker['low']}")
+        print(f"  Временная метка: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(ticker['timestamp'] / 1000))}")
+        print("-" * 50)
+    except Exception as e:
+        print(f"Ошибка при получении тикера: {e}")
     
-    # Получаем баланс
-    balance = await exchange.fetch_balance()
-    print(f"Баланс USDT: {balance.get('USDT', {}).get('free', 0)}")
+    # Получаем стакан ордеров
+    print("2. Получаем стакан ордеров (первые 5 уровней)...")
+    try:
+        orderbook = await exchange.fetch_orderbook(symbol, 5)
+        # Информация уже выводится внутри метода fetch_orderbook
+        print("-" * 50)
+    except Exception as e:
+        print(f"Ошибка при получении стакана ордеров: {e}")
     
-    # Переключаемся на другой режим
-    new_mode = 'live' if exchange.mode == 'demo' else 'demo'
-    exchange.switch_mode(new_mode)
-    print(f"Переключено на режим {exchange.mode}")
+    # Получаем баланс (если аутентифицированы)
+    print("3. Получаем баланс аккаунта...")
+    try:
+        balance = await exchange.fetch_balance()
+        # Информация уже выводится внутри метода fetch_balance
+        print("-" * 50)
+    except Exception as e:
+        print(f"Ошибка при получении баланса: {e}")
     
-    # Снова получаем информацию о тикере
-    ticker = await exchange.fetch_ticker()
-    print(f"Тикер в режиме {exchange.mode}: {ticker['last']}")
+    # Получаем открытые позиции
+    print("4. Получаем открытые позиции...")
+    try:
+        positions = await exchange.fetch_positions(symbol)
+        # Информация уже выводится внутри метода fetch_positions
+        print("-" * 50)
+    except Exception as e:
+        print(f"Ошибка при получении позиций: {e}")
+    
+    print("Тестирование REST API завершено")
+    print("=" * 50)
 
 if __name__ == "__main__":
-    # Запускаем тест
-    asyncio.run(test_exchange()) 
+    # Запускаем тест с детальным выводом данных
+    try:
+        asyncio.run(test_exchange())
+    except KeyboardInterrupt:
+        print("\nПрограмма остановлена пользователем")
+    except Exception as e:
+        print(f"Ошибка при выполнении теста: {e}") 

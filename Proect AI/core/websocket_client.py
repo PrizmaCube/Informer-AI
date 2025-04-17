@@ -595,23 +595,195 @@ class OKXWebSocketClient:
             elif 'data' in message_data:
                 # Это данные канала
                 channel = message_data.get('arg', {}).get('channel', '')
+                inst_id = message_data.get('arg', {}).get('instId', '')
+                
+                # Отображаем информацию о полученных данных
+                data_sample = message_data['data']
                 
                 # Определяем, к какому типу данных относится сообщение
                 channel_type = None
                 if channel.startswith('books'):
                     channel_type = 'orderbook'
+                    # Показываем статистику по стакану
+                    if data_sample and len(data_sample) > 0:
+                        asks_count = len(data_sample[0].get('asks', []))
+                        bids_count = len(data_sample[0].get('bids', []))
+                        action = data_sample[0].get('action', '')
+                        checksum = data_sample[0].get('checksum', '')
+                        self.logger.info(f"СТАКАН {inst_id}: {action} | {asks_count} заявок на продажу, {bids_count} заявок на покупку | checksum: {checksum}")
+                        
+                        # Показываем лучшие 3 цены спроса и предложения
+                        if asks_count > 0 and bids_count > 0:
+                            asks = data_sample[0].get('asks', [])[:3]
+                            bids = data_sample[0].get('bids', [])[:3]
+                            asks_str = " | ".join([f"{a[0]}:{a[1]}" for a in asks])
+                            bids_str = " | ".join([f"{b[0]}:{b[1]}" for b in bids])
+                            self.logger.info(f"Лучшие ASK: {asks_str}")
+                            self.logger.info(f"Лучшие BID: {bids_str}")
+                            
+                            # Расчет спреда
+                            best_ask = float(asks[0][0])
+                            best_bid = float(bids[0][0])
+                            spread = best_ask - best_bid
+                            spread_percent = (spread / best_bid) * 100
+                            self.logger.info(f"Спред: {spread:.2f} USD ({spread_percent:.4f}%)")
+                        
                 elif channel == 'trades':
                     channel_type = 'trades'
+                    # Показываем последние сделки
+                    if data_sample and len(data_sample) > 0:
+                        trades_count = len(data_sample)
+                        self.logger.info(f"СДЕЛКИ {inst_id}: получено {trades_count} сделок")
+                        
+                        # Отображаем до 3 последних сделок
+                        for trade in data_sample[:min(3, trades_count)]:
+                            side = trade.get('side', '')
+                            size = trade.get('sz', '')
+                            price = trade.get('px', '')
+                            timestamp = trade.get('ts', '')
+                            
+                            # Преобразуем timestamp в читаемый формат
+                            if timestamp:
+                                timestamp_int = int(timestamp)
+                                time_str = time.strftime('%H:%M:%S', time.localtime(timestamp_int / 1000))
+                            else:
+                                time_str = "UNKNOWN"
+                                
+                            side_colored = f"{Colors.GREEN}BUY{Colors.RESET}" if side == 'buy' else f"{Colors.RED}SELL{Colors.RESET}"
+                            self.logger.info(f"  {time_str} | {side_colored} | {size} @ {price}")
+                        
                 elif channel.startswith('candle'):
                     channel_type = 'candles'
+                    # Показываем информацию о свечах
+                    if data_sample and len(data_sample) > 0:
+                        timeframe = channel.replace('candle', '')
+                        candles_count = len(data_sample)
+                        self.logger.info(f"СВЕЧИ {timeframe} для {inst_id}: получено {candles_count} свечей")
+                        
+                        # Показываем последнюю свечу
+                        if candles_count > 0:
+                            candle = data_sample[0]
+                            # OKX формат свечей: [timestamp, open, high, low, close, volume, ...]
+                            if len(candle) >= 6:
+                                timestamp, open_price, high, low, close, volume = candle[:6]
+                                
+                                # Определяем цвет свечи
+                                if float(close) >= float(open_price):
+                                    candle_color = Colors.GREEN
+                                else:
+                                    candle_color = Colors.RED
+                                
+                                # Преобразуем timestamp в читаемый формат
+                                timestamp_int = int(timestamp)
+                                time_str = time.strftime('%H:%M:%S', time.localtime(timestamp_int / 1000))
+                                
+                                # Процентное изменение
+                                change = ((float(close) - float(open_price)) / float(open_price)) * 100
+                                change_str = f"{change:+.2f}%"
+                                
+                                self.logger.info(f"  {time_str} | O: {open_price} H: {high} L: {low} C: {candle_color}{close}{Colors.RESET} | V: {volume} | {candle_color}{change_str}{Colors.RESET}")
+                        
                 elif channel == 'funding-rate':
                     channel_type = 'funding_rate'
+                    # Показываем информацию о ставке финансирования
+                    if data_sample and len(data_sample) > 0:
+                        for funding in data_sample:
+                            funding_rate = funding.get('fundingRate', '')
+                            next_time = funding.get('nextFundingTime', '')
+                            
+                            # Преобразуем timestamp в читаемый формат
+                            if next_time:
+                                next_time_int = int(next_time)
+                                time_str = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(next_time_int / 1000))
+                            else:
+                                time_str = "UNKNOWN"
+                            
+                            # Конвертируем ставку в проценты
+                            if funding_rate:
+                                funding_rate_float = float(funding_rate) * 100
+                                if funding_rate_float > 0:
+                                    rate_colored = f"{Colors.GREEN}{funding_rate_float:+.6f}%{Colors.RESET}"
+                                else:
+                                    rate_colored = f"{Colors.RED}{funding_rate_float:.6f}%{Colors.RESET}"
+                            else:
+                                rate_colored = "UNKNOWN"
+                            
+                            self.logger.info(f"FUNDING RATE {inst_id}: {rate_colored} | Следующее время: {time_str}")
+                        
                 elif channel == 'account':
                     channel_type = 'account'
+                    # Показываем информацию о балансе
+                    if data_sample and len(data_sample) > 0:
+                        for account_data in data_sample:
+                            # Отображаем общую информацию
+                            total_equity = account_data.get('totalEq', 'N/A')
+                            
+                            self.logger.info(f"АККАУНТ: Общий баланс: {total_equity} USDT")
+                            
+                            # Отображаем детали по каждой валюте
+                            details = account_data.get('details', [])
+                            if details:
+                                for detail in details[:3]:  # Показываем первые 3 валюты
+                                    currency = detail.get('ccy', '')
+                                    available = detail.get('availBal', '')
+                                    frozen = detail.get('frozenBal', '')
+                                    
+                                    self.logger.info(f"  {currency}: доступно {available}, заморожено {frozen}")
+                            
                 elif channel == 'positions':
                     channel_type = 'positions'
+                    # Показываем информацию о позициях
+                    if data_sample and len(data_sample) > 0:
+                        positions_count = len(data_sample)
+                        self.logger.info(f"ПОЗИЦИИ: получено {positions_count} позиций")
+                        
+                        for position in data_sample:
+                            inst_id = position.get('instId', '')
+                            pos_side = position.get('posSide', '')
+                            pos = position.get('pos', '')
+                            avg_px = position.get('avgPx', '')
+                            unrealized_pnl = position.get('upl', '')
+                            
+                            # Определяем цвет для PnL
+                            if unrealized_pnl:
+                                try:
+                                    pnl_float = float(unrealized_pnl)
+                                    if pnl_float > 0:
+                                        pnl_colored = f"{Colors.GREEN}+{unrealized_pnl}{Colors.RESET}"
+                                    elif pnl_float < 0:
+                                        pnl_colored = f"{Colors.RED}{unrealized_pnl}{Colors.RESET}"
+                                    else:
+                                        pnl_colored = unrealized_pnl
+                                except:
+                                    pnl_colored = unrealized_pnl
+                            else:
+                                pnl_colored = "N/A"
+                            
+                            side_color = Colors.GREEN if pos_side == 'long' else Colors.RED
+                            side_text = f"{side_color}{pos_side.upper()}{Colors.RESET}"
+                            
+                            self.logger.info(f"  {inst_id}: {side_text} | Размер: {pos} | Средняя цена: {avg_px} | PnL: {pnl_colored}")
+                            
                 elif channel == 'orders':
                     channel_type = 'orders'
+                    # Показываем информацию о ордерах
+                    if data_sample and len(data_sample) > 0:
+                        orders_count = len(data_sample)
+                        self.logger.info(f"ОРДЕРА: получено {orders_count} ордеров")
+                        
+                        for order in data_sample:
+                            inst_id = order.get('instId', '')
+                            order_id = order.get('ordId', '')
+                            side = order.get('side', '')
+                            order_type = order.get('ordType', '')
+                            price = order.get('px', '')
+                            size = order.get('sz', '')
+                            status = order.get('state', '')
+                            
+                            side_color = Colors.GREEN if side == 'buy' else Colors.RED
+                            side_text = f"{side_color}{side.upper()}{Colors.RESET}"
+                            
+                            self.logger.info(f"  {inst_id}: {side_text} | {order_type} | Цена: {price} | Размер: {size} | Статус: {status} | ID: {order_id}")
                 
                 # Если есть колбэки для данного типа канала, вызываем их
                 if channel_type and channel_type in self.callbacks:
@@ -731,34 +903,89 @@ async def test_websocket():
     
     # Определяем обработчик для стакана ордеров
     async def orderbook_handler(data):
-        print(f"Получено обновление стакана: {len(data[0]['asks'])} заявок на продажу, {len(data[0]['bids'])} заявок на покупку")
+        # Обработчик пуст, так как вся информация выводится в обработчике сообщений
+        pass
         
     # Определяем обработчик для тиковых сделок
     async def trades_handler(data):
-        print(f"Получены сделки: {len(data)} сделок")
-        for trade in data:
-            print(f"  {trade['side']} {trade['sz']} по цене {trade['px']}")
+        # Обработчик пуст, так как вся информация выводится в обработчике сообщений
+        pass
+    
+    # Определяем обработчик для свечей
+    async def candles_handler(data):
+        # Обработчик пуст, так как вся информация выводится в обработчике сообщений
+        pass
+    
+    # Определяем обработчик для аккаунта
+    async def account_handler(data):
+        # Обработчик пуст, так как вся информация выводится в обработчике сообщений
+        pass
     
     # Добавляем обработчики
     ws_client.add_callback('orderbook', orderbook_handler)
     ws_client.add_callback('trades', trades_handler)
+    ws_client.add_callback('candles', candles_handler)
+    ws_client.add_callback('account', account_handler)
+    
+    print("=" * 50)
+    print("ТЕСТИРОВАНИЕ ПОДКЛЮЧЕНИЯ WEBSOCKET")
+    print("Вы увидите все данные, получаемые в реальном времени")
+    print("=" * 50)
     
     # Устанавливаем соединение
     await ws_client.connect()
     
-    # Подписываемся на каналы
-    await ws_client.subscribe_orderbook()
-    await ws_client.subscribe_trades()
+    # Подписываемся на различные каналы
+    symbol = ws_client.symbol
     
-    # Слушаем некоторое время
+    print(f"Подписка на каналы для символа: {symbol}")
+    
+    # Стакан ордеров с глубиной 400
+    await ws_client.subscribe_orderbook(symbol, "books", 400)
+    
+    # Тиковые сделки
+    await ws_client.subscribe_trades(symbol)
+    
+    # Свечи разных таймфреймов
+    await ws_client.subscribe_candles(symbol, "1m")
+    await ws_client.subscribe_candles(symbol, "5m")
+    
+    # Ставка финансирования
+    await ws_client.subscribe_funding_rate(symbol)
+    
+    # Если аутентифицированы, подписываемся на приватные каналы
+    if ws_client.is_authenticated:
+        # Аккаунт
+        await ws_client.subscribe_account()
+        
+        # Позиции для фьючерсов
+        await ws_client.subscribe_positions("SWAP")
+        
+        # Ордера
+        await ws_client.subscribe_orders("SWAP", inst_id=symbol)
+    
+    # Слушаем определенное время
     try:
-        print("Прослушивание WebSocket сообщений в течение 30 секунд...")
+        duration = 120  # 2 минуты
+        print(f"Прослушивание WebSocket сообщений в течение {duration} секунд...")
+        print("Нажмите Ctrl+C для досрочного завершения")
+        print("-" * 50)
+        
         listen_task = asyncio.create_task(ws_client.listen())
-        await asyncio.sleep(30)
+        await asyncio.sleep(duration)
+    except KeyboardInterrupt:
+        print("\nПрослушивание остановлено пользователем")
     finally:
         # Закрываем соединение
         await ws_client.close()
+        print("WebSocket соединение закрыто")
+        print("=" * 50)
 
 if __name__ == "__main__":
-    # Запускаем тест
-    asyncio.run(test_websocket())
+    # Запускаем тест с детальным выводом данных
+    try:
+        asyncio.run(test_websocket())
+    except KeyboardInterrupt:
+        print("\nПрограмма остановлена пользователем")
+    except Exception as e:
+        print(f"Ошибка при выполнении теста: {e}")
